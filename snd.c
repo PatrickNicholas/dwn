@@ -7,21 +7,31 @@
 
 #define MAX_CARDS 256
 
+struct watcher_t {
+    const char* name;
+    struct elem_value_t value;
+    snd_event_callback_t callback;
+};
+
 snd_ctl_t* ctls[MAX_CARDS];
 size_t ncards = 0;
-struct elem_value_t playback_volume, playback_switch, capture_switch;
-snd_event_callback_t playback_volume_callback, playback_switch_callback, capture_switch_callback;
+struct watcher_t playback_volume_watcher = {.name = "Master Playback Volume", .callback = NULL};
+struct watcher_t playback_switch_watcher = {.name = "Master Playback Switch", .callback = NULL};
+struct watcher_t capture_switch_watcher = {.name = "Master Capture Switch", .callback = NULL};
+
+struct watcher_t* watchers[] = {&playback_volume_watcher, &playback_switch_watcher,
+                                &capture_switch_watcher, NULL};
 
 void set_playback_volume_change_callback(snd_event_callback_t cb, void* private) {
-    playback_volume_callback = cb;
+    playback_volume_watcher.callback = cb;
 }
 
 void set_playback_switch_change_callback(snd_event_callback_t cb, void* private) {
-    playback_switch_callback = cb;
+    playback_switch_watcher.callback = cb;
 }
 
 void set_capture_switch_change_callback(snd_event_callback_t cb, void* private) {
-    capture_switch_callback = cb;
+    capture_switch_watcher.callback = cb;
 }
 
 void close_all_snds() {
@@ -199,15 +209,12 @@ int snd_event_handler(void* private, struct pollfd* pfd) {
         snd_ctl_event_alloca(&event);
         if (snd_ctl_read(ctl, event) > 0 && snd_ctl_event_get_type(event) == SND_CTL_EVENT_ELEM &&
             snd_ctl_event_elem_get_mask(event) & SND_CTL_EVENT_MASK_VALUE) {
-            if (maybe_update_elem_value(ctl, "Master Playback Volume", &playback_volume) &&
-                playback_volume_callback)
-                playback_volume_callback(&playback_volume, NULL);
-            if (maybe_update_elem_value(ctl, "Master Playback Switch", &playback_switch) &&
-                playback_switch_callback)
-                playback_switch_callback(&playback_switch, NULL);
-            if (maybe_update_elem_value(ctl, "Capture Switch", &capture_switch) &&
-                capture_switch_callback)
-                capture_switch_callback(&capture_switch, NULL);
+            for (size_t i = 0; watchers[i]; i++) {
+                struct watcher_t* w = watchers[i];
+                if (w->callback && maybe_update_elem_value(ctl, w->name, &w->value)) {
+                    w->callback(&w->value, NULL);
+                }
+            }
         }
     }
 
@@ -222,9 +229,9 @@ void init_snd() {
         // FOR DEBUG:
         // dump(ctls[i]);
 
-        read_elem_value(ctls[i], "Master Playback Volume", &playback_volume);
-        read_elem_value(ctls[i], "Master Playback Switch", &playback_switch);
-        read_elem_value(ctls[i], "Capture Switch", &capture_switch);
+        for (size_t j = 0; watchers[j]; j++) {
+            read_elem_value(ctls[i], watchers[j]->name, &watchers[j]->value);
+        }
 
         snd_ctl_poll_descriptors(ctls[i], &pfd, 1);
         if (add_poll_sub(&pfd, snd_event_handler, ctls[i]) == -1) {

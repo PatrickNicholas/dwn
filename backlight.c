@@ -41,7 +41,7 @@ void notify_brightness(long actual, long max) {
 const char* ACTUAL_BRIGHTNESS = "/sys/class/backlight/acpi_video0/actual_brightness";
 const char* MAX_BRIGHTNESS = "/sys/class/backlight/acpi_video0/max_brightness";
 
-int on_brightness_modified(void*) {
+int on_brightness_modified(void* private) {
     long int actual = take_num(ACTUAL_BRIGHTNESS);
     long int max = take_num(MAX_BRIGHTNESS);
 
